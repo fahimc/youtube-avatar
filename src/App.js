@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader";
+
 let morphTargetInfluences;
 let mixer;
 let lastUpdateTime = 0;
@@ -14,6 +15,31 @@ let lastBlinkTime = 0;
 let eyeLeft, eyeRight;
 let headBone;
 let lastNodTime = 0;
+let mouthOpenIndex = 0;
+let teethMesh;
+let wolf3DHeadMesh;
+let leftArmBone;
+let rightArmBone;
+let leftHandBone;
+let rightHandBone;
+let controls;
+let avatar;
+
+let audioContext = new (window.AudioContext || window.webkitAudioContext)();
+let audioSource;
+let audioDestination = audioContext.createMediaStreamDestination();
+let analyser;
+let recorder;
+
+const cameraPositions = {
+  wide: { position: new THREE.Vector3(0, 0.93, 2.8), duration: 10000 }, // 5 seconds
+  closeUp: { position: new THREE.Vector3(0, 1, 2), duration: 10000 }, // 2 seconds
+};
+let currentCameraPosition = "wide";
+let lastCameraChangeTime = Date.now();
+
+let lastArmMoveTime = 0;
+const armMoveInterval = 2000; // Time between arm movements in milliseconds
 
 const nodInterval = 4000; // Time between nods in milliseconds
 const nodDuration = 500; // Duration of a nod in milliseconds
@@ -30,10 +56,13 @@ const loader = new GLTFLoader();
 const fbxLoader = new FBXLoader();
 const scene = new THREE.Scene();
 let renderer;
+let created = false;
+let chunks = [];
 function App() {
   const containerRef = React.useRef();
   React.useEffect(() => {
-    if (containerRef.current) {
+    if (containerRef.current && !created) {
+      created = true;
       if (renderer) {
         containerRef.current.removeChild(renderer.domElement);
         renderer.dispose();
@@ -55,29 +84,17 @@ function App() {
       camera.updateProjectionMatrix();
       renderer.setPixelRatio(window.devicePixelRatio);
 
-      // Lighting
-      const ambientLight = new THREE.AmbientLight(0xffffff, 1);
-      scene.add(ambientLight);
-
-      const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-      directionalLight.position.set(5, 3, 2); // Adjust the position as needed
-      scene.add(directionalLight);
-
-      const pointLight = new THREE.PointLight(0xffffff, 1, 100);
-      pointLight.position.set(0, 5, 2); // Adjust the position to focus on the character
-      scene.add(pointLight);
-
       const avatarURL =
         "https://models.readyplayer.me/6370d572777dc969696d3efa.glb";
       loader.load(
         avatarURL,
         function (gltf) {
-          const avatar = gltf.scene;
+          avatar = gltf.scene;
           let leftArmBone, rightArmBone;
           // Compute the bounding box of the avatar
           const bbox = new THREE.Box3().setFromObject(avatar);
           const center = bbox.getCenter(new THREE.Vector3());
-          console.log(avatar);
+
           if (avatar.children[0].children[3].morphTargetInfluences) {
             morphTargetInfluences =
               avatar.children[0].children[3].morphTargetInfluences;
@@ -105,10 +122,10 @@ function App() {
               // Check if the bone's name matches 'EyeLeft' or 'EyeRight'
               if (object.name === "LeftEye") {
                 eyeLeft = object;
-                console.log("Found EyeLeft:", object);
+                // console.log("Found EyeLeft:", object);
               } else if (object.name === "RightEye") {
                 eyeRight = object;
-                console.log("Found EyeRight:", object);
+                // console.log("Found EyeRight:", object);
               }
             }
           });
@@ -125,9 +142,9 @@ function App() {
 
           // Check if the shoulder bones were found
           if (rightShoulder && leftShoulder) {
-            console.log("Shoulder bones found:", rightShoulder, leftShoulder);
+            // console.log("Shoulder bones found:", rightShoulder, leftShoulder);
           } else {
-            console.log("Shoulder bones not found.");
+            // console.log("Shoulder bones not found.");
           }
 
           avatar.traverse(function (object) {
@@ -139,9 +156,9 @@ function App() {
 
           // Check if the head bone was found
           if (headBone) {
-            console.log("Head bone found:", headBone);
+            // console.log("Head bone found:", headBone);
           } else {
-            console.log("Head bone not found.");
+            // console.log("Head bone not found.");
           }
 
           // Rotate the arm bones (example values, adjust as needed)
@@ -152,7 +169,62 @@ function App() {
             rightArmBone.rotation.x = Math.PI / 2; // Rotate around the X axis
           }
 
+          avatar.traverse(function (object) {
+            if (object.name === "Wolf3D_Teeth") {
+              teethMesh = object;
+              mouthOpenIndex = object.morphTargetDictionary["mouthOpen"];
+            }
+          });
+
+          // Check if the teeth bone was found
+          if (teethMesh) {
+            // console.log("Teeth bone found:", teethMesh);
+          } else {
+            // console.log("Teeth bone not found.");
+          }
+
+          avatar.traverse(function (object) {
+            if (object.name === "Wolf3D_Head") {
+              wolf3DHeadMesh = object;
+            }
+          });
+
+          avatar.traverse(function (object) {
+            if (object.isBone) {
+              switch (object.name) {
+                case "LeftArm":
+                  leftArmBone = object;
+                  break;
+                case "RightArm":
+                  rightArmBone = object;
+                  break;
+                case "LeftHand":
+                  leftHandBone = object;
+                  break;
+                case "RightHand":
+                  rightHandBone = object;
+                  break;
+              }
+            }
+          });
+
+          const loader = new THREE.TextureLoader();
+          const bgTexture = loader.load("bg.png"); // Replace with your image path
+          scene.background = bgTexture;
+
           scene.add(avatar);
+
+          // Lighting
+          const ambientLight = new THREE.AmbientLight(0xffffff, 1);
+          scene.add(ambientLight);
+
+          const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+          directionalLight.position.set(5, 3, 2); // Adjust the position as needed
+          scene.add(directionalLight);
+
+          const pointLight = new THREE.PointLight(0xffffff, 1, 100);
+          pointLight.position.set(0, 5, 0); // Adjust the position to focus on the character
+          scene.add(pointLight);
 
           // Calculate the distance the camera should be from the avatar
           const size = bbox.getSize(new THREE.Vector3());
@@ -167,7 +239,6 @@ function App() {
             (object) => {
               // Create an AnimationMixer for the object
               const mixer = new THREE.AnimationMixer(avatar);
-              console.log(object);
               // Access the animations from the loaded object
               const action = mixer.clipAction(object.animations[0]); // Play the first animation
               action.play();
@@ -188,7 +259,9 @@ function App() {
       // Camera position
 
       containerRef.current.appendChild(renderer.domElement);
-      const controls = new OrbitControls(camera, renderer.domElement);
+      // ... after setting up audioSource
+
+      controls = new OrbitControls(camera, renderer.domElement);
       // Animation loop
       function animate() {
         requestAnimationFrame(animate);
@@ -198,15 +271,30 @@ function App() {
           mixer.update(delta);
         }
         blink(); // Update blinking
-        simulateTalking(); // Update mouth movement
+        // simulateTalking(); // Update mouth movement
         nod(); // Update nodding
         animateShoulders();
+        animateArms();
+        updateCameraPosition(); // Update camera position based on timing
+        if (analyser) {
+          let dataArray = new Uint8Array(analyser.frequencyBinCount);
+          analyser.getByteFrequencyData(dataArray);
+
+          let averageVolume = getAverageVolume(dataArray);
+
+          // Map the average volume to the mouth's open scale
+          let mouthScale = mapVolumeToMouthScale(averageVolume);
+          simulateTalking(mouthScale);
+          // Apply this scale to the mouth bone or morph target
+          // For example, if using a morph target:
+          // mesh.morphTargetInfluences[mouthOpenIndex] = mouthScale;
+        }
         renderer.render(scene, camera);
       }
       animate();
       // Handle window resize
       // // Handle window resize
-      // window.addEventListener("resize", onWindowResize, false);
+      window.addEventListener("resize", onWindowResize, false);
       function onWindowResize() {
         const newWidth = window.innerWidth;
         const newHeight = newWidth / aspectRatio;
@@ -250,7 +338,7 @@ function App() {
 
       function animateShoulders() {
         const currentTime = Date.now();
-        const shoulderMovement = Math.sin(currentTime * 0.002) * 0.004; // Adjust for desired range
+        const shoulderMovement = Math.sin(currentTime * 0.002) * 0.01; // Adjust for desired range
 
         if (rightShoulder) {
           rightShoulder.rotation.y = shoulderMovement;
@@ -258,6 +346,50 @@ function App() {
         if (leftShoulder) {
           leftShoulder.rotation.y = -shoulderMovement; // Opposite direction for natural movement
         }
+      }
+
+      function animateArms() {
+        const currentTime = Date.now();
+        if (currentTime - lastArmMoveTime > armMoveInterval) {
+          lastArmMoveTime = currentTime;
+
+          // Randomize arm movement
+          const leftArmRotation = Math.random() * 0.1 - 0.05; // Random rotation between -0.05 and 0.05 radians
+          const rightArmRotation = Math.random() * 0.1 - 0.05;
+
+          // Apply rotation to arm bones
+          if (leftArmBone) {
+            leftArmBone.rotation.x += leftArmRotation;
+          }
+          if (rightArmBone) {
+            rightArmBone.rotation.x += rightArmRotation;
+          }
+
+          // Reset rotation after a short duration
+          setTimeout(() => {
+            if (leftArmBone) {
+              leftArmBone.rotation.x -= leftArmRotation;
+            }
+            if (rightArmBone) {
+              rightArmBone.rotation.x -= rightArmRotation;
+            }
+          }, 500);
+        }
+      }
+
+      function updateCameraPosition() {
+        const currentTime = Date.now();
+        const currentSetting = cameraPositions[currentCameraPosition];
+        const elapsedTime = currentTime - lastCameraChangeTime;
+        if (elapsedTime > currentSetting.duration) {
+          lastCameraChangeTime = currentTime;
+          // Switch camera position
+          currentCameraPosition =
+            currentCameraPosition === "wide" ? "closeUp" : "wide";
+          // Update camera position
+        }
+        const newPosition = cameraPositions[currentCameraPosition].position;
+        camera.position.set(newPosition.x, newPosition.y, newPosition.z);
       }
 
       function nod() {
@@ -286,31 +418,149 @@ function App() {
       }
 
       // Function to simulate talking
-      function simulateTalking() {
-        if (!morphTargetInfluences) return;
-
+      function simulateTalking(_openAmount) {
         const currentTime = Date.now();
-        const deltaTime = currentTime - lastUpdateTime;
 
-        // Randomly change speed and introduce pauses
-        if (currentTime > nextChangeTime) {
-          currentSpeed = Math.random(); // Speed of mouth movement
-          const pauseDuration = Math.random() * 2000; // Pause duration in milliseconds
-          nextChangeTime = currentTime + pauseDuration;
+        // Simulate mouth movement - this is just an example
+        // Replace this with your actual logic for mouth movement
+        const openAmount =
+          _openAmount !== undefined
+            ? _openAmount
+            : Math.sin(currentTime * 0.005) * 0.5 + 0.5; // Oscillates between 0 and 1
+
+        // Animate the mouth opening on the "Wolf3D_Head" mesh
+        if (
+          wolf3DHeadMesh &&
+          wolf3DHeadMesh.morphTargetInfluences &&
+          wolf3DHeadMesh.morphTargetDictionary
+        ) {
+          const mouthOpenIndex =
+            wolf3DHeadMesh.morphTargetDictionary["mouthOpen"];
+          if (mouthOpenIndex !== undefined) {
+            wolf3DHeadMesh.morphTargetInfluences[mouthOpenIndex] = openAmount;
+          }
         }
 
-        // Oscillate the influence of the morph targets
-        morphTargetInfluences[0] =
-          Math.sin(currentTime * 0.015 * currentSpeed) * 0.5 + 0.5;
-        morphTargetInfluences[1] =
-          Math.cos(currentTime * 0.015 * currentSpeed) * 0.5 + 0.5;
+        // Animate the teeth opening
+        if (
+          teethMesh &&
+          teethMesh.morphTargetInfluences &&
+          teethMesh.morphTargetDictionary
+        ) {
+          const teethMouthOpenIndex =
+            teethMesh.morphTargetDictionary["mouthOpen"];
+          if (teethMouthOpenIndex !== undefined) {
+            teethMesh.morphTargetInfluences[teethMouthOpenIndex] = openAmount;
+          }
+        }
+      }
+      function getAverageVolume(array) {
+        let values = 0;
+        let average;
 
-        lastUpdateTime = currentTime;
+        let length = array.length;
+        for (let i = 0; i < length; i++) {
+          values += array[i];
+        }
+
+        average = values / length;
+        return average;
+      }
+
+      function mapVolumeToMouthScale(volume) {
+        // Map the volume to a scale of 0 to 1 (or whatever scale your model uses)
+        // This will likely require some tweaking
+        let minVolume = 0; // Minimum observed volume
+        let maxVolume = 128; // Maximum observed volume
+
+        return (volume - minVolume) / (maxVolume - minVolume);
       }
     }
   }, [containerRef]);
 
-  return <div className="container" ref={containerRef}></div>;
+  function minutesToMilliseconds(minutes) {
+    return minutes * 60 * 1000;
+  }
+
+  return (
+    <>
+      <div className="container" ref={containerRef}></div>
+      <button
+        onClick={() => {
+          if (audioContext.state === "suspended") {
+            audioContext.resume();
+          }
+
+          // Load and play the audio as before
+          fetch("voice.mp3")
+            .then((response) => response.arrayBuffer())
+            .then((arrayBuffer) => audioContext.decodeAudioData(arrayBuffer))
+            .then((audioBuffer) => {
+              audioSource = audioContext.createBufferSource();
+              audioSource.buffer = audioBuffer;
+              analyser = audioContext.createAnalyser();
+              audioSource.connect(audioDestination);
+              audioSource.connect(analyser);
+              analyser.connect(audioContext.destination);
+              audioSource.onended = () => {
+                setTimeout(() => {
+                  recorder.stop();
+                  console.log("recorder stop");
+                }, 3000); // Stop recording 3 seconds after audio ends
+              };
+
+              const canvas = renderer.domElement;
+              // console.log(renderer);
+              // var gl = renderer.getContext(); //get webGl context
+              // var canvas = gl.canvas;
+              const canvasStream = canvas.captureStream(30); // 25 FPS, adjust as needed
+
+              canvasStream.addTrack(
+                audioDestination.stream.getAudioTracks()[0]
+              );
+              const combinedStream = new MediaStream([
+                canvasStream.getVideoTracks()[0],
+                audioDestination.stream.getAudioTracks()[0],
+              ]);
+              console.log("recorder created");
+              recorder = new MediaRecorder(combinedStream, {
+                mimeType: "video/webm",
+              });
+
+              recorder.ondataavailable = (event) => {
+                chunks.push(event.data);
+                console.log(event.data.size);
+                if (event.data.size > 0) {
+                }
+              };
+
+              recorder.onstop = () => {
+                console.log("recorder end event");
+                const blob = new Blob(chunks, { type: "video/webm" });
+                const url = URL.createObjectURL(blob);
+
+                // Create a download link
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "recorded-video.webm";
+                document.body.appendChild(a);
+                a.click();
+
+                // Cleanup
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+              };
+              // Assuming you have a way to detect when the audio ends
+              recorder.start();
+              audioSource.start();
+            })
+            .catch((e) => console.error(e));
+        }}
+      >
+        start
+      </button>
+    </>
+  );
 }
 
 export default App;
