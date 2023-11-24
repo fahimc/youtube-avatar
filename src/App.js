@@ -24,13 +24,15 @@ let leftHandBone;
 let rightHandBone;
 let controls;
 let avatar;
+let video;
+let videoTexture;
 
 let audioContext = new (window.AudioContext || window.webkitAudioContext)();
 let audioSource;
 let audioDestination = audioContext.createMediaStreamDestination();
 let analyser;
 let recorder;
-
+let camera;
 const cameraPositions = {
   wide: { position: new THREE.Vector3(0, 0.93, 2.8), duration: 10000 }, // 5 seconds
   closeUp: { position: new THREE.Vector3(0, 1, 2), duration: 10000 }, // 2 seconds
@@ -71,7 +73,7 @@ function App() {
       const width = window.innerWidth;
       const height = width / aspectRatio;
       const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(15, aspectRatio, 0.1, 1000);
+      camera = new THREE.PerspectiveCamera(15, aspectRatio, 0.1, 1000);
 
       renderer = new THREE.WebGLRenderer({
         antialias: true,
@@ -233,22 +235,6 @@ function App() {
           // Position the camera to frame the avatar based on its size
           camera.position.set(0, size.y / 2, distance);
           camera.lookAt(new THREE.Vector3(0, size.y / 2, 2));
-
-          fbxLoader.load(
-            "idle.fbx",
-            (object) => {
-              // Create an AnimationMixer for the object
-              const mixer = new THREE.AnimationMixer(avatar);
-              // Access the animations from the loaded object
-              const action = mixer.clipAction(object.animations[0]); // Play the first animation
-              action.play();
-              // Other setup...
-            },
-            undefined,
-            function (error) {
-              console.error(error);
-            }
-          );
         },
         undefined,
         function (error) {
@@ -262,6 +248,9 @@ function App() {
       // ... after setting up audioSource
 
       controls = new OrbitControls(camera, renderer.domElement);
+
+      // videoTexture.format = THREE.RGBFormat;
+
       // Animation loop
       function animate() {
         requestAnimationFrame(animate);
@@ -289,6 +278,11 @@ function App() {
           // For example, if using a morph target:
           // mesh.morphTargetInfluences[mouthOpenIndex] = mouthScale;
         }
+
+        if (video && video.readyState === video.HAVE_ENOUGH_DATA) {
+          videoTexture.needsUpdate = true;
+        }
+
         renderer.render(scene, camera);
       }
       animate();
@@ -538,6 +532,17 @@ function App() {
                 console.log("recorder end event");
                 const blob = new Blob(chunks, { type: "video/webm" });
                 const url = URL.createObjectURL(blob);
+
+                const formData = new FormData();
+                formData.append("video", blob, "recording.webm");
+
+                fetch("/upload", {
+                  method: "POST",
+                  body: formData,
+                })
+                  .then((response) => response.json())
+                  .then((data) => console.log(data))
+                  .catch((error) => console.error("Error:", error));
 
                 // Create a download link
                 const a = document.createElement("a");
