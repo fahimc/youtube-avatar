@@ -5,6 +5,9 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader";
+import { FFmpeg } from "@ffmpeg/ffmpeg";
+import { fetchFile, toBlobURL } from "@ffmpeg/util";
+const ffmpeg = new FFmpeg();
 
 let morphTargetInfluences;
 let mixer;
@@ -498,7 +501,7 @@ function App() {
               analyser.connect(audioContext.destination);
               audioSource.onended = () => {
                 setTimeout(() => {
-                  recorder.stop();
+                  // recorder.stop();
                   console.log("recorder stop");
                 }, 3000); // Stop recording 3 seconds after audio ends
               };
@@ -507,7 +510,7 @@ function App() {
               // console.log(renderer);
               // var gl = renderer.getContext(); //get webGl context
               // var canvas = gl.canvas;
-              const canvasStream = canvas.captureStream(30); // 25 FPS, adjust as needed
+              const canvasStream = canvas.captureStream(25); // 25 FPS, adjust as needed
 
               canvasStream.addTrack(
                 audioDestination.stream.getAudioTracks()[0]
@@ -528,36 +531,81 @@ function App() {
                 }
               };
 
-              recorder.onstop = () => {
+              recorder.onstop = async () => {
                 console.log("recorder end event");
                 const blob = new Blob(chunks, { type: "video/webm" });
                 const url = URL.createObjectURL(blob);
 
-                const formData = new FormData();
-                formData.append("video", blob, "recording.webm");
+                const baseURL =
+                  "https://unpkg.com/@ffmpeg/core@0.12.4/dist/umd";
+                await ffmpeg.load({
+                  coreURL: await toBlobURL(
+                    `${baseURL}/ffmpeg-core.js`,
+                    "text/javascript"
+                  ),
+                  wasmURL: await toBlobURL(
+                    `${baseURL}/ffmpeg-core.wasm`,
+                    "application/wasm"
+                  ),
+                });
+                ffmpeg.on("log", ({ message }) => {
+                  console.log(message);
+                });
+                await ffmpeg.writeFile("input.webm", await fetchFile(url));
+                await ffmpeg.writeFile(
+                  "intro.mp4",
+                  await fetchFile("/video/intro.mp4")
+                );
+                await ffmpeg.exec([
+                  "-i",
+                  "input.webm",
+                  // "-vf",
+                  // "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+                  "-vf",
+                  "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+                  "input.mp4",
+                ]);
+                const timestamp = new Date().getTime();
 
-                fetch("/upload", {
-                  method: "POST",
-                  body: formData,
-                })
-                  .then((response) => response.json())
-                  .then((data) => console.log(data))
-                  .catch((error) => console.error("Error:", error));
+                const inputPaths = ["file intro.mp4", "file input.mp4"];
+                await ffmpeg.writeFile(
+                  "concat_list.txt",
+                  inputPaths.join("\n")
+                );
 
+                await ffmpeg.exec([
+                  "-f",
+                  "concat",
+                  "-safe",
+                  "0",
+                  "-i",
+                  "concat_list.txt",
+                  "-vf",
+                  "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+                  `output.mp4`,
+                ]);
+                const ffdata = await ffmpeg.readFile(`output.mp4`);
+                const ffurl = URL.createObjectURL(
+                  new Blob([ffdata.buffer], { type: "video/mp4" })
+                );
                 // Create a download link
                 const a = document.createElement("a");
-                a.href = url;
-                a.download = "recorded-video.webm";
+                a.href = ffurl;
+                a.download = `output.mp4`;
                 document.body.appendChild(a);
                 a.click();
 
                 // Cleanup
-                window.URL.revokeObjectURL(url);
+                window.URL.revokeObjectURL(ffurl);
                 document.body.removeChild(a);
               };
               // Assuming you have a way to detect when the audio ends
               recorder.start();
               audioSource.start();
+              setTimeout(() => {
+                recorder.stop();
+                console.log("recorder stop");
+              }, 3000); // Stop recording 3 seconds after audio ends
             })
             .catch((e) => console.error(e));
         }}
