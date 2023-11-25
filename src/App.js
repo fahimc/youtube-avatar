@@ -501,9 +501,9 @@ function App() {
               analyser.connect(audioContext.destination);
               audioSource.onended = () => {
                 setTimeout(() => {
-                  // recorder.stop();
+                  recorder.stop();
                   console.log("recorder stop");
-                }, 3000); // Stop recording 3 seconds after audio ends
+                }, 1000); // Stop recording 3 seconds after audio ends
               };
 
               const canvas = renderer.domElement;
@@ -556,18 +556,24 @@ function App() {
                   "intro.mp4",
                   await fetchFile("/video/intro.mp4")
                 );
+                await ffmpeg.writeFile(
+                  "out.mp4",
+                  await fetchFile("/video/out.mp4")
+                );
                 await ffmpeg.exec([
                   "-i",
                   "input.webm",
-                  // "-vf",
-                  // "pad=ceil(iw/2)*2:ceil(ih/2)*2",
                   "-vf",
                   "scale=trunc(iw/2)*2:trunc(ih/2)*2",
                   "input.mp4",
                 ]);
                 const timestamp = new Date().getTime();
 
-                const inputPaths = ["file intro.mp4", "file input.mp4"];
+                const inputPaths = [
+                  "file intro.mp4",
+                  "file input.mp4",
+                  "file out.mp4",
+                ];
                 await ffmpeg.writeFile(
                   "concat_list.txt",
                   inputPaths.join("\n")
@@ -582,9 +588,9 @@ function App() {
                   "concat_list.txt",
                   "-vf",
                   "scale=trunc(iw/2)*2:trunc(ih/2)*2",
-                  `output.mp4`,
+                  `output-${timestamp}.mp4`,
                 ]);
-                const ffdata = await ffmpeg.readFile(`output.mp4`);
+                const ffdata = await ffmpeg.readFile(`output-${timestamp}.mp4`);
                 const ffurl = URL.createObjectURL(
                   new Blob([ffdata.buffer], { type: "video/mp4" })
                 );
@@ -602,10 +608,6 @@ function App() {
               // Assuming you have a way to detect when the audio ends
               recorder.start();
               audioSource.start();
-              setTimeout(() => {
-                recorder.stop();
-                console.log("recorder stop");
-              }, 3000); // Stop recording 3 seconds after audio ends
             })
             .catch((e) => console.error(e));
         }}
