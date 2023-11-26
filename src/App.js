@@ -563,34 +563,39 @@ function App() {
                 await ffmpeg.exec([
                   "-i",
                   "input.webm",
+                  "-async",
+                  "1",
                   "-vf",
                   "scale=trunc(iw/2)*2:trunc(ih/2)*2",
                   "input.mp4",
                 ]);
-                const timestamp = new Date().getTime();
+                // const timestamp = new Date().getTime();
 
-                const inputPaths = [
-                  "file intro.mp4",
-                  "file input.mp4",
-                  "file out.mp4",
-                ];
-                await ffmpeg.writeFile(
-                  "concat_list.txt",
-                  inputPaths.join("\n")
-                );
+                // const inputPaths = [
+                //   "file intro.mp4",
+                //   "file input.mp4",
+                //   "file out.mp4",
+                // ];
+                // await ffmpeg.writeFile(
+                //   "concat_list.txt",
+                //   inputPaths.join("\n")
+                // );
 
-                await ffmpeg.exec([
-                  "-f",
-                  "concat",
-                  "-safe",
-                  "0",
-                  "-i",
-                  "concat_list.txt",
-                  "-vf",
-                  "scale=trunc(iw/2)*2:trunc(ih/2)*2",
-                  `output-${timestamp}.mp4`,
-                ]);
-                const ffdata = await ffmpeg.readFile(`output-${timestamp}.mp4`);
+                // await ffmpeg.exec([
+                //   "-f",
+                //   "concat",
+                //   "-safe",
+                //   "0",
+                //   "-i",
+                //   "concat_list.txt",
+                //   "-async",
+                //   "1",
+                //   "-vf",
+                //   "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+                //   `output-${timestamp}.mp4`,
+                // ]);
+                // const ffdata = await ffmpeg.readFile(`output-${timestamp}.mp4`);
+                const ffdata = await ffmpeg.readFile(`input.mp4`);
                 const ffurl = URL.createObjectURL(
                   new Blob([ffdata.buffer], { type: "video/mp4" })
                 );
@@ -608,6 +613,10 @@ function App() {
               // Assuming you have a way to detect when the audio ends
               recorder.start();
               audioSource.start();
+              // setTimeout(() => {
+              //   recorder.stop();
+              //   console.log("recorder stop");
+              // }, 10000); // Stop recording 3 seconds after audio ends
             })
             .catch((e) => console.error(e));
         }}
