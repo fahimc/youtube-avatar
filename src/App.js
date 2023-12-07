@@ -29,10 +29,16 @@ let controls;
 let avatar;
 let video;
 let videoTexture;
-
-let audioContext = new (window.AudioContext || window.webkitAudioContext)();
+let videoElement;
+let videoPlane;
+let width;
+let size;
+let distance;
+let height;
+let audioContext;
+let gain;
 let audioSource;
-let audioDestination = audioContext.createMediaStreamDestination();
+let audioDestination;
 let analyser;
 let recorder;
 let camera;
@@ -65,17 +71,17 @@ let created = false;
 let chunks = [];
 function App() {
   const containerRef = React.useRef();
+  const videoPlayerRef = React.useRef();
   React.useEffect(() => {
-    if (containerRef.current && !created) {
+    if (containerRef.current && videoPlayerRef.current && !created) {
       created = true;
       if (renderer) {
         containerRef.current.removeChild(renderer.domElement);
         renderer.dispose();
       }
       const aspectRatio = 16 / 9;
-      const width = window.innerWidth;
-      const height = width / aspectRatio;
-      const scene = new THREE.Scene();
+      width = window.innerWidth;
+      height = width / aspectRatio;
       camera = new THREE.PerspectiveCamera(15, aspectRatio, 0.1, 1000);
 
       renderer = new THREE.WebGLRenderer({
@@ -215,7 +221,7 @@ function App() {
 
           const loader = new THREE.TextureLoader();
           const bgTexture = loader.load("bg.png"); // Replace with your image path
-          scene.background = bgTexture;
+          // scene.background = bgTexture;
 
           scene.add(avatar);
 
@@ -232,12 +238,18 @@ function App() {
           scene.add(pointLight);
 
           // Calculate the distance the camera should be from the avatar
-          const size = bbox.getSize(new THREE.Vector3());
-          const distance = size.y * 1.5;
+          size = bbox.getSize(new THREE.Vector3());
+          distance = size.y * 1.5;
 
           // Position the camera to frame the avatar based on its size
           camera.position.set(0, size.y / 2, distance);
           camera.lookAt(new THREE.Vector3(0, size.y / 2, 2));
+          createBackgroundOverlay(size, distance);
+          videoElement = videoPlayerRef.current;
+          createVideoOverlay("video/out.mp4", size, distance);
+
+          // videoElement.mute = true;
+          //
         },
         undefined,
         function (error) {
@@ -267,7 +279,7 @@ function App() {
         nod(); // Update nodding
         animateShoulders();
         animateArms();
-        updateCameraPosition(); // Update camera position based on timing
+
         if (analyser) {
           let dataArray = new Uint8Array(analyser.frequencyBinCount);
           analyser.getByteFrequencyData(dataArray);
@@ -276,14 +288,11 @@ function App() {
 
           // Map the average volume to the mouth's open scale
           let mouthScale = mapVolumeToMouthScale(averageVolume);
+          if (averageVolume) updateCameraPosition(); // Update camera position based on timing
           simulateTalking(mouthScale);
           // Apply this scale to the mouth bone or morph target
           // For example, if using a morph target:
           // mesh.morphTargetInfluences[mouthOpenIndex] = mouthScale;
-        }
-
-        if (video && video.readyState === video.HAVE_ENOUGH_DATA) {
-          videoTexture.needsUpdate = true;
         }
 
         renderer.render(scene, camera);
@@ -331,6 +340,43 @@ function App() {
             eyeRight.rotation.x = 0;
           }
         }
+      }
+      function createBackgroundOverlay(size, distance) {
+        var geometry = new THREE.PlaneGeometry(2, (height / width) * 2);
+        const loader = new THREE.TextureLoader();
+        const bgTexture = loader.load("bg.png"); // Replace with your image path
+
+        const material = new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          side: THREE.DoubleSide,
+          map: bgTexture,
+        });
+        const plane = new THREE.Mesh(geometry, material);
+        plane.position.set(0, size.y / 2, distance - 3);
+        scene.add(plane);
+      }
+      function createVideoOverlay(source, size, distance) {
+        var geometry = new THREE.PlaneGeometry(0.5, (height / width) * 0.5);
+
+        videoElement.setAttribute("playsinline", true);
+
+        videoElement.setAttribute("crossOrigin", "anonymous");
+        videoElement.src = source || `video/out.mp4`;
+        videoElement.width = width;
+        videoElement.height = height;
+        videoElement.load();
+        videoTexture = new THREE.VideoTexture(videoElement);
+        videoTexture.colorSpace = THREE.SRGBColorSpace;
+        videoTexture.crossOrigin = "anonymous";
+        const material = new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          side: THREE.DoubleSide,
+          map: videoTexture,
+        });
+        videoPlane = new THREE.Mesh(geometry, material);
+        videoPlane.position.set(0, size.y / 2, distance - 1);
+        videoPlane.visible = false;
+        scene.add(videoPlane);
       }
 
       function animateShoulders() {
@@ -473,10 +519,116 @@ function App() {
         return (volume - minVolume) / (maxVolume - minVolume);
       }
     }
-  }, [containerRef]);
+  }, [containerRef, videoPlayerRef]);
 
-  function minutesToMilliseconds(minutes) {
-    return minutes * 60 * 1000;
+  function createBackgroundOverlay(size, distance) {
+    var geometry = new THREE.PlaneGeometry(2, (height / width) * 2);
+    const loader = new THREE.TextureLoader();
+    const bgTexture = loader.load("bg.png"); // Replace with your image path
+
+    const material = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      side: THREE.DoubleSide,
+      map: bgTexture,
+    });
+    const plane = new THREE.Mesh(geometry, material);
+    plane.position.set(0, size.y / 2, distance - 3);
+    scene.add(plane);
+  }
+  function createDynamicVideoOverlay(source, onEnd) {
+    const videoPlayer = document.createElement("video");
+    // document.body.appendChild(videoPlayer);
+    videoPlayer.setAttribute("playsinline", true);
+
+    videoPlayer.setAttribute("crossOrigin", "anonymous");
+    videoPlayer.style = "position:absolute;bottom:0";
+    videoPlayer.width = width;
+    videoPlayer.height = height;
+    videoPlayer.addEventListener(
+      "loadedmetadata",
+      (e) => {
+        console.log(
+          "loaded",
+          videoPlayer.videoWidth,
+          videoPlayer.videoHeight,
+          width,
+          height
+        );
+        videoPlayer.width = width;
+        videoPlayer.height = height;
+        const geometry = new THREE.PlaneGeometry(
+          0.5,
+          (videoPlayer.videoHeight / videoPlayer.videoWidth) * 0.5
+        );
+        const videoNewTexture = new THREE.VideoTexture(videoPlayer);
+        videoNewTexture.colorSpace = THREE.SRGBColorSpace;
+        videoNewTexture.crossOrigin = "anonymous";
+        const material = new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          side: THREE.DoubleSide,
+          map: videoNewTexture,
+        });
+        const videoNewPlane = new THREE.Mesh(geometry, material);
+        videoNewPlane.position.set(0, size.y / 2, distance - 1);
+        videoNewPlane.visible = true;
+        scene.add(videoNewPlane);
+        videoPlayer.addEventListener(
+          "ended",
+          (e) => {
+            console.log("end");
+            videoNewPlane.visible = false;
+            onEnd();
+          },
+          false
+        );
+        const mediaElementSource = new MediaElementAudioSourceNode(
+          audioContext,
+          {
+            mediaElement: videoPlayer,
+          }
+        );
+        mediaElementSource.connect(gain);
+        videoPlayer.play();
+      },
+      false
+    );
+
+    videoPlayer.src = source || `video/out.mp4`;
+    videoPlayer.load();
+  }
+
+  function createAudio(fileName, onEnd, delay) {
+    fetch(fileName)
+      .then((response) => response.arrayBuffer())
+      .then((arrayBuffer) => audioContext.decodeAudioData(arrayBuffer))
+      .then((audioBuffer) => {
+        audioSource = audioContext.createBufferSource();
+        audioSource.buffer = audioBuffer;
+        analyser = audioContext.createAnalyser();
+        audioSource.connect(audioDestination);
+        audioSource.connect(analyser);
+        analyser.connect(audioContext.destination);
+
+        gain.connect(audioDestination);
+
+        const mediaElementSource = new MediaElementAudioSourceNode(
+          audioContext,
+          { mediaElement: videoElement }
+        );
+        mediaElementSource.connect(gain);
+
+        audioSource.onended = () => {
+          onEnd();
+        };
+
+        if (audioContext.state === "suspended") {
+          audioContext.resume();
+        }
+        setTimeout(() => {
+          audioSource.start();
+        }, delay || 0);
+      })
+      .catch((e) => console.error(e));
   }
 
   return (
@@ -484,145 +636,182 @@ function App() {
       <div className="container" ref={containerRef}></div>
       <button
         onClick={() => {
-          if (audioContext.state === "suspended") {
-            audioContext.resume();
-          }
+          audioContext =
+            audioContext ||
+            new (window.AudioContext || window.webkitAudioContext)();
+          audioDestination =
+            audioDestination || audioContext.createMediaStreamDestination();
+          gain = gain || audioContext.createGain();
+          createAudio(
+            "hook.mp3",
+            () => {
+              setTimeout(() => {
+                const newPosition = cameraPositions["wide"].position;
+                camera.position.set(
+                  newPosition.x,
+                  newPosition.y,
+                  newPosition.z
+                );
+                createDynamicVideoOverlay(`video/intro.mp4`, () => {
+                  createAudio("content.mp3", () => {
+                    setTimeout(() => {
+                      const newPosition = cameraPositions["wide"].position;
+                      camera.position.set(
+                        newPosition.x,
+                        newPosition.y,
+                        newPosition.z
+                      );
+                      createDynamicVideoOverlay(`video/out.mp4`, () => {
+                        recorder.stop();
+                        console.log("recorder stop");
+                      });
+                    }, 1000);
+                  });
+                });
+                // videoElement.addEventListener("loadedmetadata", (e) => {
+                //   console.log(
+                //     "loaded",
+                //     videoElement.videoWidth,
+                //     videoElement.videoHeight,
+                //     width,
+                //     height
+                //   );
+                //   videoElement.width = width;
+                // });
 
+                // const newPosition = cameraPositions["wide"].position;
+                // camera.position.set(newPosition.x, newPosition.y, newPosition.z);
+                // videoPlane.visible = true;
+                // videoElement.play();
+                // videoElement.onended = () => {
+                //   recorder.stop();
+                //   console.log("recorder stop");
+                // };
+              }, 1000); // Stop recording 3 seconds after audio ends
+            },
+            3000
+          );
           // Load and play the audio as before
-          fetch("voice.mp3")
-            .then((response) => response.arrayBuffer())
-            .then((arrayBuffer) => audioContext.decodeAudioData(arrayBuffer))
-            .then((audioBuffer) => {
-              audioSource = audioContext.createBufferSource();
-              audioSource.buffer = audioBuffer;
-              analyser = audioContext.createAnalyser();
-              audioSource.connect(audioDestination);
-              audioSource.connect(analyser);
-              analyser.connect(audioContext.destination);
-              audioSource.onended = () => {
-                setTimeout(() => {
-                  recorder.stop();
-                  console.log("recorder stop");
-                }, 1000); // Stop recording 3 seconds after audio ends
-              };
+          // fetch("hook.mp3")
+          //   .then((response) => response.arrayBuffer())
+          //   .then((arrayBuffer) => audioContext.decodeAudioData(arrayBuffer))
+          //   .then((audioBuffer) => {
+          //     audioSource = audioContext.createBufferSource();
+          //     audioSource.buffer = audioBuffer;
+          //     analyser = audioContext.createAnalyser();
+          //     audioSource.connect(audioDestination);
+          //     audioSource.connect(analyser);
+          //     analyser.connect(audioContext.destination);
 
-              const canvas = renderer.domElement;
-              // console.log(renderer);
-              // var gl = renderer.getContext(); //get webGl context
-              // var canvas = gl.canvas;
-              const canvasStream = canvas.captureStream(25); // 25 FPS, adjust as needed
+          //     var gain = audioContext.createGain();
+          //     gain.connect(audioDestination);
 
-              canvasStream.addTrack(
-                audioDestination.stream.getAudioTracks()[0]
-              );
-              const combinedStream = new MediaStream([
-                canvasStream.getVideoTracks()[0],
-                audioDestination.stream.getAudioTracks()[0],
-              ]);
-              console.log("recorder created");
-              recorder = new MediaRecorder(combinedStream, {
-                mimeType: "video/webm",
-              });
+          //     var mediaElementSource = new MediaElementAudioSourceNode(
+          //       audioContext,
+          //       { mediaElement: videoElement }
+          //     );
+          //     mediaElementSource.connect(gain);
 
-              recorder.ondataavailable = (event) => {
-                chunks.push(event.data);
-                console.log(event.data.size);
-                if (event.data.size > 0) {
-                }
-              };
+          //     audioSource.onended = () => {
+          //       setTimeout(() => {
+          //         const newPosition = cameraPositions["wide"].position;
+          //         camera.position.set(
+          //           newPosition.x,
+          //           newPosition.y,
+          //           newPosition.z
+          //         );
+          //         videoPlane.visible = true;
+          //         videoElement.play();
+          //         videoElement.onended = () => {
+          //           recorder.stop();
+          //           console.log("recorder stop");
+          //         };
+          //       }, 1000); // Stop recording 3 seconds after audio ends
+          //     };
 
-              recorder.onstop = async () => {
-                console.log("recorder end event");
-                const blob = new Blob(chunks, { type: "video/webm" });
-                const url = URL.createObjectURL(blob);
+          const canvas = renderer.domElement;
 
-                const baseURL =
-                  "https://unpkg.com/@ffmpeg/core@0.12.4/dist/umd";
-                await ffmpeg.load({
-                  coreURL: await toBlobURL(
-                    `${baseURL}/ffmpeg-core.js`,
-                    "text/javascript"
-                  ),
-                  wasmURL: await toBlobURL(
-                    `${baseURL}/ffmpeg-core.wasm`,
-                    "application/wasm"
-                  ),
-                });
-                ffmpeg.on("log", ({ message }) => {
-                  console.log(message);
-                });
-                await ffmpeg.writeFile("input.webm", await fetchFile(url));
-                await ffmpeg.writeFile(
-                  "intro.mp4",
-                  await fetchFile("/video/intro.mp4")
-                );
-                await ffmpeg.writeFile(
-                  "out.mp4",
-                  await fetchFile("/video/out.mp4")
-                );
-                await ffmpeg.exec([
-                  "-i",
-                  "input.webm",
-                  "-async",
-                  "1",
-                  "-vf",
-                  "scale=trunc(iw/2)*2:trunc(ih/2)*2",
-                  "input.mp4",
-                ]);
-                // const timestamp = new Date().getTime();
+          const canvasStream = canvas.captureStream(25); // 25 FPS, adjust as needed
 
-                // const inputPaths = [
-                //   "file intro.mp4",
-                //   "file input.mp4",
-                //   "file out.mp4",
-                // ];
-                // await ffmpeg.writeFile(
-                //   "concat_list.txt",
-                //   inputPaths.join("\n")
-                // );
+          canvasStream.addTrack(audioDestination.stream.getAudioTracks()[0]);
 
-                // await ffmpeg.exec([
-                //   "-f",
-                //   "concat",
-                //   "-safe",
-                //   "0",
-                //   "-i",
-                //   "concat_list.txt",
-                //   "-async",
-                //   "1",
-                //   "-vf",
-                //   "scale=trunc(iw/2)*2:trunc(ih/2)*2",
-                //   `output-${timestamp}.mp4`,
-                // ]);
-                // const ffdata = await ffmpeg.readFile(`output-${timestamp}.mp4`);
-                const ffdata = await ffmpeg.readFile(`input.mp4`);
-                const ffurl = URL.createObjectURL(
-                  new Blob([ffdata.buffer], { type: "video/mp4" })
-                );
-                // Create a download link
-                const a = document.createElement("a");
-                a.href = ffurl;
-                a.download = `output.mp4`;
-                document.body.appendChild(a);
-                a.click();
+          const combinedStream = new MediaStream([
+            canvasStream.getVideoTracks()[0],
+            audioDestination.stream.getAudioTracks()[0],
+          ]);
+          console.log("recorder created");
+          recorder = new MediaRecorder(combinedStream, {
+            mimeType: "video/webm",
+          });
 
-                // Cleanup
-                window.URL.revokeObjectURL(ffurl);
-                document.body.removeChild(a);
-              };
-              // Assuming you have a way to detect when the audio ends
-              recorder.start();
-              audioSource.start();
-              // setTimeout(() => {
-              //   recorder.stop();
-              //   console.log("recorder stop");
-              // }, 10000); // Stop recording 3 seconds after audio ends
-            })
-            .catch((e) => console.error(e));
+          recorder.ondataavailable = (event) => {
+            chunks.push(event.data);
+            console.log(event.data.size);
+            if (event.data.size > 0) {
+            }
+          };
+
+          recorder.onstop = async () => {
+            console.log("recorder end event");
+            const blob = new Blob(chunks, { type: "video/webm" });
+            const url = URL.createObjectURL(blob);
+
+            const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.4/dist/umd";
+            await ffmpeg.load({
+              coreURL: await toBlobURL(
+                `${baseURL}/ffmpeg-core.js`,
+                "text/javascript"
+              ),
+              wasmURL: await toBlobURL(
+                `${baseURL}/ffmpeg-core.wasm`,
+                "application/wasm"
+              ),
+            });
+            ffmpeg.on("log", ({ message }) => {
+              console.log(message);
+            });
+            await ffmpeg.writeFile("input.webm", await fetchFile(url));
+            await ffmpeg.writeFile(
+              "intro.mp4",
+              await fetchFile("/video/intro.mp4")
+            );
+            await ffmpeg.writeFile(
+              "out.mp4",
+              await fetchFile("/video/out.mp4")
+            );
+            await ffmpeg.exec([
+              "-i",
+              "input.webm",
+              "-async",
+              "1",
+              "-vf",
+              "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+              "input.mp4",
+            ]);
+
+            const ffdata = await ffmpeg.readFile(`input.mp4`);
+            const ffurl = URL.createObjectURL(
+              new Blob([ffdata.buffer], { type: "video/mp4" })
+            );
+            // Create a download link
+            const a = document.createElement("a");
+            a.href = ffurl;
+            a.download = `output.mp4`;
+            document.body.appendChild(a);
+            a.click();
+
+            // Cleanup
+            window.URL.revokeObjectURL(ffurl);
+            document.body.removeChild(a);
+          };
+
+          // Assuming you have a way to detect when the audio ends
+          recorder.start();
         }}
       >
         start
       </button>
+      <video ref={videoPlayerRef}></video>
     </>
   );
 }
