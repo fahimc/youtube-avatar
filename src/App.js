@@ -10,6 +10,8 @@ import { fetchFile, toBlobURL } from "@ffmpeg/util";
 const ffmpeg = new FFmpeg();
 
 let morphTargetInfluences;
+//if the voice is low the mouth movement can be too small so we use the mouth multiplier to increase the mouth movement. You maybe leave it as 1.
+const mouthOpenMultiplier = 3;
 let mixer;
 let lastUpdateTime = 0;
 let currentSpeed = 0.5;
@@ -462,6 +464,8 @@ function App() {
 
       // Function to simulate talking
       function simulateTalking(_openAmount) {
+        console.log(_openAmount);
+        _openAmount = _openAmount * mouthOpenMultiplier;
         const currentTime = Date.now();
 
         // Simulate mouth movement - this is just an example
@@ -611,11 +615,11 @@ function App() {
 
         gain.connect(audioDestination);
 
-        const mediaElementSource = new MediaElementAudioSourceNode(
-          audioContext,
-          { mediaElement: videoElement }
-        );
-        mediaElementSource.connect(gain);
+        // const mediaElementSource = new MediaElementAudioSourceNode(
+        //   audioContext,
+        //   { mediaElement: videoElement }
+        // );
+        // mediaElementSource.connect(gain);
 
         audioSource.onended = () => {
           onEnd();
@@ -653,6 +657,7 @@ function App() {
                   newPosition.z
                 );
                 createDynamicVideoOverlay(`video/intro.mp4`, () => {
+                  console.log("here");
                   createAudio("content.mp3", () => {
                     setTimeout(() => {
                       const newPosition = cameraPositions["wide"].position;

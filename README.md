@@ -2,24 +2,6 @@
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
-For speech to text you need to install Bark
-
-## Install Bark
-
-```
-git clone https://github.com/suno-ai/bark
-cd bark && pip install .
-pip install IPython
-```
-
-## install voice cloner
-
-https://github.com/BenAAndrew/Voice-Cloning-App/releases
-
-## install text-to-speech
-
-https://github.com/snakers4/silero-models#models-and-speakers
-
 ## Available Scripts
 
 In the project directory, you can run:
@@ -86,3 +68,7 @@ This section has moved here: [https://facebook.github.io/create-react-app/docs/d
 ### `npm run build` fails to minify
 
 This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+
+# Text to speech
+
+Use the ms-text-to-speech.py in the utils folder.
