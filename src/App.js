@@ -110,6 +110,8 @@ function App() {
       }
       const aspectRatio = 16 / 9;
       width = containerRef.current.clientWidth || window.innerWidth * 0.7;
+      width =
+        width <= window.innerWidth * 0.5 ? width : window.innerWidth * 0.5;
       height = width / aspectRatio;
       camera = new THREE.PerspectiveCamera(15, aspectRatio, 0.1, 1000);
 
@@ -332,11 +334,14 @@ function App() {
       // // Handle window resize
       window.addEventListener("resize", onWindowResize, false);
       function onWindowResize() {
-        const newWidth = containerRef.current?.clientWidth
+        let newWidth = containerRef.current?.clientWidth
           ? containerRef.current.clientWidth
           : window.innerWidth * 0.7;
+        newWidth =
+          newWidth <= window.innerWidth * 0.5
+            ? newWidth
+            : window.innerWidth * 0.5;
         const newHeight = newWidth / aspectRatio;
-        console.log("resize", newWidth);
 
         camera.aspect = aspectRatio;
         camera.updateProjectionMatrix();
@@ -495,7 +500,6 @@ function App() {
 
       // Function to simulate talking
       function simulateTalking(_openAmount) {
-        console.log(_openAmount);
         _openAmount = _openAmount * mouthOpenMultiplier;
         const currentTime = Date.now();
 
@@ -676,6 +680,7 @@ function App() {
                 );
                 createDynamicVideoOverlay(`video/out.mp4`, () => {
                   recorder.stop();
+                  containerRef.current?.classList.remove("show");
                   console.log("recorder stop");
                 });
               }, 1000);
@@ -758,80 +763,103 @@ function App() {
 
     // Assuming you have a way to detect when the audio ends
     recorder.start();
+    containerRef?.current?.classList.add("show");
   }
 
   return (
     <>
+      <h1 className="title">VTuber Recording Studio</h1>
       <div className="column">
-        <div className="container" ref={containerRef}></div>
-        <div className="right-panel">
-          <h1>Studio</h1>
-          <button className="button-1" onClick={() => onRecordClicked()}>
-            Record
-          </button>
-          <button
-            className="button-1 button-2"
-            onClick={() => {
-              recorder.stop();
-              audioContext.stop();
-            }}
-          >
-            Stop
-          </button>
-        </div>
-      </div>
-      <div className="bottom-panel">
-        <h1>Generate Scripts</h1>
-        <div className="script-container">
-          <div className="row">
-            <h2>Hook (intro)</h2>
-            <a href="hook.txt" target="_blank">
-              open hook text file
-            </a>
-            <audio controls>
-              <source src="hook.mp3" type="audio/mpeg" />
-              Your browser does not support the audio element.
-            </audio>
-            <h3>Update Hook Script</h3>
-            <textarea id="hook-text" />
+        <div className="left-panel">
+          <div className="container" ref={containerRef}></div>
+          <div className="bottom-panel">
+            <button className="button-1" onClick={() => onRecordClicked()}>
+              Record
+            </button>
             <button
-              className="button-1"
+              className="button-1 button-2"
               onClick={() => {
-                const text = document.querySelector("#hook-text").value;
-                const message = JSON.stringify({
-                  content: text, // Example Python code
-                  filename: "hook", // Example filename
-                });
-                ws.send(message);
+                recorder.stop();
+                audioContext.close();
+                containerRef.current?.classList.remove("show");
               }}
             >
-              Generate
+              Stop
             </button>
           </div>
-          <div className="row">
-            <h2>Main Script</h2>
-            <a href="hook.txt" target="_blank">
-              open main text file
-            </a>
-            <audio controls>
-              <source src="content.mp3" type="audio/mpeg" />
-              Your browser does not support the audio element.
-            </audio>
-            <h3>Update Main Script</h3>
-            <textarea id="content-text" />
-            <button
-              className="button-1"
-              onClick={() => {
-                const text = document.querySelector("#content-text").value;
-                const message = JSON.stringify({
-                  content: text, // Example Python code
-                  filename: "content", // Example filename
-                });
-                ws.send(message);
-              }}
-            >
-              Generate
-            </button>
+        </div>
+        <div className="right-panel">
+          <h1>Generate Scripts</h1>
+          <p>
+            In this section you can provide two scripts for the video. The hook
+            is the intro and main is the rest of the script. The intro video
+            will follow after the hook.
+          </p>
+          <p>
+            Once you input the text click generate and wait for the page to
+            refresh twice. It will update the hook text file and audio below for
+            you to check. If the audio has not changed refresh the page one more
+            time.
+          </p>
+          <p>
+            Note: When recording you may not here the intro and outro video
+            sound but it will be recorded
+          </p>
+          <p>
+            When you have the audio then hit the record button to start
+            recording.
+          </p>
+          <div className="script-container">
+            <div className="row">
+              <h2>Hook Script</h2>
+              <textarea id="hook-text" />
+              <button
+                className="button-1"
+                onClick={() => {
+                  const text = document.querySelector("#hook-text").value;
+                  const message = JSON.stringify({
+                    content: text, // Example Python code
+                    filename: "hook", // Example filename
+                  });
+                  ws.send(message);
+                }}
+              >
+                Generate
+              </button>
+              <a href="hook.txt" target="_blank">
+                click to preview hook transcript
+              </a>
+              <p>Test Audio</p>
+              <audio controls>
+                <source src="hook.mp3" type="audio/mpeg" />
+                Your browser does not support the audio element.
+              </audio>
+            </div>
+            <div className="row">
+              <h2>Main Script</h2>
+              <textarea id="content-text" />
+              <button
+                className="button-1"
+                onClick={() => {
+                  const text = document.querySelector("#content-text").value;
+                  const message = JSON.stringify({
+                    content: text, // Example Python code
+                    filename: "content", // Example filename
+                  });
+                  ws.send(message);
+                }}
+              >
+                Generate
+              </button>
+              <a href="hook.txt" target="_blank">
+                click to preview main transcript
+              </a>
+              <p>Test Audio</p>
+              <audio controls>
+                <source src="content.mp3" type="audio/mpeg" />
+                Your browser does not support the audio element.
+              </audio>
+            </div>
           </div>
         </div>
       </div>

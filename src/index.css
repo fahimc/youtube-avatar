@@ -12,7 +12,9 @@ body {
   display: flex;
   flex-direction: column;
 }
-
+.title {
+  padding-left: 20px;
+}
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
     monospace;
@@ -28,10 +30,17 @@ code {
   height: 100%;
   flex: 1;
   row-gap: 10px;
+  color: white;
+  max-width: 43%;
+  box-sizing: border-box;
 }
 textarea {
   flex: 1;
+  min-height: 300px;
 }
 a {
   color: white;
+}
+audio {
+  width: 100%;
 }
