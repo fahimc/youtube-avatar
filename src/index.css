@@ -17,3 +17,21 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
     monospace;
 }
+#root {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+.row {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  flex: 1;
+  row-gap: 10px;
+}
+textarea {
+  flex: 1;
+}
+a {
+  color: white;
+}

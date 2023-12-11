@@ -7,6 +7,33 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile, toBlobURL } from "@ffmpeg/util";
+
+// Connect to WebSocket server
+const ws = new WebSocket("ws://localhost:8080");
+
+// Connection opened
+ws.addEventListener("open", function (event) {
+  console.log("Connected to WS Server");
+  ws.send("ping");
+});
+
+// Listen for messages
+ws.addEventListener("message", function (event) {
+  console.log("Message from server:", event.data);
+  const json = JSON.parse(event.data);
+  console.log(json);
+});
+
+// Handle any errors that occur
+ws.addEventListener("error", function (error) {
+  console.error("WebSocket Error:", error);
+});
+
+// WebSocket closed
+ws.addEventListener("close", function (event) {
+  console.log("WebSocket connection closed");
+});
+
 const ffmpeg = new FFmpeg();
 
 let morphTargetInfluences;
@@ -75,14 +102,14 @@ function App() {
   const containerRef = React.useRef();
   const videoPlayerRef = React.useRef();
   React.useEffect(() => {
-    if (containerRef.current && videoPlayerRef.current && !created) {
+    if (containerRef.current && !created) {
       created = true;
       if (renderer) {
         containerRef.current.removeChild(renderer.domElement);
         renderer.dispose();
       }
       const aspectRatio = 16 / 9;
-      width = window.innerWidth;
+      width = containerRef.current.clientWidth || window.innerWidth * 0.7;
       height = width / aspectRatio;
       camera = new THREE.PerspectiveCamera(15, aspectRatio, 0.1, 1000);
 
@@ -98,7 +125,8 @@ function App() {
       renderer.setPixelRatio(window.devicePixelRatio);
 
       const avatarURL =
-        "https://models.readyplayer.me/6370d572777dc969696d3efa.glb";
+        // "https://models.readyplayer.me/6370d572777dc969696d3efa.glb";
+        "https://models.readyplayer.me/6576547c34acda26a8b78a02.glb";
       loader.load(
         avatarURL,
         function (gltf) {
@@ -247,8 +275,8 @@ function App() {
           camera.position.set(0, size.y / 2, distance);
           camera.lookAt(new THREE.Vector3(0, size.y / 2, 2));
           createBackgroundOverlay(size, distance);
-          videoElement = videoPlayerRef.current;
-          createVideoOverlay("video/out.mp4", size, distance);
+          // videoElement = videoPlayerRef.current;
+          // createVideoOverlay("video/out.mp4", size, distance);
 
           // videoElement.mute = true;
           //
@@ -304,8 +332,11 @@ function App() {
       // // Handle window resize
       window.addEventListener("resize", onWindowResize, false);
       function onWindowResize() {
-        const newWidth = window.innerWidth;
+        const newWidth = containerRef.current?.clientWidth
+          ? containerRef.current.clientWidth
+          : window.innerWidth * 0.7;
         const newHeight = newWidth / aspectRatio;
+        console.log("resize", newWidth);
 
         camera.aspect = aspectRatio;
         camera.updateProjectionMatrix();
@@ -525,20 +556,6 @@ function App() {
     }
   }, [containerRef, videoPlayerRef]);
 
-  function createBackgroundOverlay(size, distance) {
-    var geometry = new THREE.PlaneGeometry(2, (height / width) * 2);
-    const loader = new THREE.TextureLoader();
-    const bgTexture = loader.load("bg.png"); // Replace with your image path
-
-    const material = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      side: THREE.DoubleSide,
-      map: bgTexture,
-    });
-    const plane = new THREE.Mesh(geometry, material);
-    plane.position.set(0, size.y / 2, distance - 3);
-    scene.add(plane);
-  }
   function createDynamicVideoOverlay(source, onEnd) {
     const videoPlayer = document.createElement("video");
     // document.body.appendChild(videoPlayer);
@@ -635,20 +652,21 @@ function App() {
       .catch((e) => console.error(e));
   }
 
-  return (
-    <>
-      <div className="container" ref={containerRef}></div>
-      <button
-        onClick={() => {
-          audioContext =
-            audioContext ||
-            new (window.AudioContext || window.webkitAudioContext)();
-          audioDestination =
-            audioDestination || audioContext.createMediaStreamDestination();
-          gain = gain || audioContext.createGain();
-          createAudio(
-            "hook.mp3",
-            () => {
+  function onRecordClicked() {
+    audioContext =
+      audioContext || new (window.AudioContext || window.webkitAudioContext)();
+    audioDestination =
+      audioDestination || audioContext.createMediaStreamDestination();
+    gain = gain || audioContext.createGain();
+    createAudio(
+      "hook.mp3",
+      () => {
+        setTimeout(() => {
+          const newPosition = cameraPositions["wide"].position;
+          camera.position.set(newPosition.x, newPosition.y, newPosition.z);
+          createDynamicVideoOverlay(`video/intro.mp4`, () => {
+            console.log("here");
+            createAudio("content.mp3", () => {
               setTimeout(() => {
                 const newPosition = cameraPositions["wide"].position;
                 camera.position.set(
@@ -656,167 +674,169 @@ function App() {
                   newPosition.y,
                   newPosition.z
                 );
-                createDynamicVideoOverlay(`video/intro.mp4`, () => {
-                  console.log("here");
-                  createAudio("content.mp3", () => {
-                    setTimeout(() => {
-                      const newPosition = cameraPositions["wide"].position;
-                      camera.position.set(
-                        newPosition.x,
-                        newPosition.y,
-                        newPosition.z
-                      );
-                      createDynamicVideoOverlay(`video/out.mp4`, () => {
-                        recorder.stop();
-                        console.log("recorder stop");
-                      });
-                    }, 1000);
-                  });
+                createDynamicVideoOverlay(`video/out.mp4`, () => {
+                  recorder.stop();
+                  console.log("recorder stop");
                 });
-                // videoElement.addEventListener("loadedmetadata", (e) => {
-                //   console.log(
-                //     "loaded",
-                //     videoElement.videoWidth,
-                //     videoElement.videoHeight,
-                //     width,
-                //     height
-                //   );
-                //   videoElement.width = width;
-                // });
-
-                // const newPosition = cameraPositions["wide"].position;
-                // camera.position.set(newPosition.x, newPosition.y, newPosition.z);
-                // videoPlane.visible = true;
-                // videoElement.play();
-                // videoElement.onended = () => {
-                //   recorder.stop();
-                //   console.log("recorder stop");
-                // };
-              }, 1000); // Stop recording 3 seconds after audio ends
-            },
-            3000
-          );
-          // Load and play the audio as before
-          // fetch("hook.mp3")
-          //   .then((response) => response.arrayBuffer())
-          //   .then((arrayBuffer) => audioContext.decodeAudioData(arrayBuffer))
-          //   .then((audioBuffer) => {
-          //     audioSource = audioContext.createBufferSource();
-          //     audioSource.buffer = audioBuffer;
-          //     analyser = audioContext.createAnalyser();
-          //     audioSource.connect(audioDestination);
-          //     audioSource.connect(analyser);
-          //     analyser.connect(audioContext.destination);
-
-          //     var gain = audioContext.createGain();
-          //     gain.connect(audioDestination);
-
-          //     var mediaElementSource = new MediaElementAudioSourceNode(
-          //       audioContext,
-          //       { mediaElement: videoElement }
-          //     );
-          //     mediaElementSource.connect(gain);
-
-          //     audioSource.onended = () => {
-          //       setTimeout(() => {
-          //         const newPosition = cameraPositions["wide"].position;
-          //         camera.position.set(
-          //           newPosition.x,
-          //           newPosition.y,
-          //           newPosition.z
-          //         );
-          //         videoPlane.visible = true;
-          //         videoElement.play();
-          //         videoElement.onended = () => {
-          //           recorder.stop();
-          //           console.log("recorder stop");
-          //         };
-          //       }, 1000); // Stop recording 3 seconds after audio ends
-          //     };
-
-          const canvas = renderer.domElement;
-
-          const canvasStream = canvas.captureStream(25); // 25 FPS, adjust as needed
-
-          canvasStream.addTrack(audioDestination.stream.getAudioTracks()[0]);
-
-          const combinedStream = new MediaStream([
-            canvasStream.getVideoTracks()[0],
-            audioDestination.stream.getAudioTracks()[0],
-          ]);
-          console.log("recorder created");
-          recorder = new MediaRecorder(combinedStream, {
-            mimeType: "video/webm",
+              }, 1000);
+            });
           });
+        }, 1000); // Stop recording seconds after audio ends
+      },
+      3000
+    );
 
-          recorder.ondataavailable = (event) => {
-            chunks.push(event.data);
-            console.log(event.data.size);
-            if (event.data.size > 0) {
-            }
-          };
+    const canvas = renderer.domElement;
 
-          recorder.onstop = async () => {
-            console.log("recorder end event");
-            const blob = new Blob(chunks, { type: "video/webm" });
-            const url = URL.createObjectURL(blob);
+    const canvasStream = canvas.captureStream(25); // 25 FPS, adjust as needed
 
-            const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.4/dist/umd";
-            await ffmpeg.load({
-              coreURL: await toBlobURL(
-                `${baseURL}/ffmpeg-core.js`,
-                "text/javascript"
-              ),
-              wasmURL: await toBlobURL(
-                `${baseURL}/ffmpeg-core.wasm`,
-                "application/wasm"
-              ),
-            });
-            ffmpeg.on("log", ({ message }) => {
-              console.log(message);
-            });
-            await ffmpeg.writeFile("input.webm", await fetchFile(url));
-            await ffmpeg.writeFile(
-              "intro.mp4",
-              await fetchFile("/video/intro.mp4")
-            );
-            await ffmpeg.writeFile(
-              "out.mp4",
-              await fetchFile("/video/out.mp4")
-            );
-            await ffmpeg.exec([
-              "-i",
-              "input.webm",
-              "-async",
-              "1",
-              "-vf",
-              "scale=trunc(iw/2)*2:trunc(ih/2)*2",
-              "input.mp4",
-            ]);
+    canvasStream.addTrack(audioDestination.stream.getAudioTracks()[0]);
 
-            const ffdata = await ffmpeg.readFile(`input.mp4`);
-            const ffurl = URL.createObjectURL(
-              new Blob([ffdata.buffer], { type: "video/mp4" })
-            );
-            // Create a download link
-            const a = document.createElement("a");
-            a.href = ffurl;
-            a.download = `output.mp4`;
-            document.body.appendChild(a);
-            a.click();
+    const combinedStream = new MediaStream([
+      canvasStream.getVideoTracks()[0],
+      audioDestination.stream.getAudioTracks()[0],
+    ]);
+    console.log("recorder created");
+    recorder = new MediaRecorder(combinedStream, {
+      mimeType: "video/webm",
+    });
 
-            // Cleanup
-            window.URL.revokeObjectURL(ffurl);
-            document.body.removeChild(a);
-          };
+    recorder.ondataavailable = (event) => {
+      chunks.push(event.data);
+      console.log(event.data.size);
+      if (event.data.size > 0) {
+      }
+    };
 
-          // Assuming you have a way to detect when the audio ends
-          recorder.start();
-        }}
-      >
-        start
-      </button>
-      <video ref={videoPlayerRef}></video>
+    recorder.onstop = async () => {
+      console.log("recorder end event");
+      const blob = new Blob(chunks, { type: "video/webm" });
+      const url = URL.createObjectURL(blob);
+
+      const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.4/dist/umd";
+      await ffmpeg.load({
+        coreURL: await toBlobURL(
+          `${baseURL}/ffmpeg-core.js`,
+          "text/javascript"
+        ),
+        wasmURL: await toBlobURL(
+          `${baseURL}/ffmpeg-core.wasm`,
+          "application/wasm"
+        ),
+      });
+      ffmpeg.on("log", ({ message }) => {
+        console.log(message);
+      });
+      await ffmpeg.writeFile("input.webm", await fetchFile(url));
+      await ffmpeg.writeFile("intro.mp4", await fetchFile("/video/intro.mp4"));
+      await ffmpeg.writeFile("out.mp4", await fetchFile("/video/out.mp4"));
+      await ffmpeg.exec([
+        "-i",
+        "input.webm",
+        "-async",
+        "1",
+        "-vf",
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+        "input.mp4",
+      ]);
+
+      const ffdata = await ffmpeg.readFile(`input.mp4`);
+      const ffurl = URL.createObjectURL(
+        new Blob([ffdata.buffer], { type: "video/mp4" })
+      );
+      // Create a download link
+      const a = document.createElement("a");
+      a.href = ffurl;
+      a.download = `output.mp4`;
+      document.body.appendChild(a);
+      a.click();
+
+      // Cleanup
+      window.URL.revokeObjectURL(ffurl);
+      document.body.removeChild(a);
+    };
+
+    // Assuming you have a way to detect when the audio ends
+    recorder.start();
+  }
+
+  return (
+    <>
+      <div className="column">
+        <div className="container" ref={containerRef}></div>
+        <div className="right-panel">
+          <h1>Studio</h1>
+          <button className="button-1" onClick={() => onRecordClicked()}>
+            Record
+          </button>
+          <button
+            className="button-1 button-2"
+            onClick={() => {
+              recorder.stop();
+              audioContext.stop();
+            }}
+          >
+            Stop
+          </button>
+        </div>
+      </div>
+      <div className="bottom-panel">
+        <h1>Generate Scripts</h1>
+        <div className="script-container">
+          <div className="row">
+            <h2>Hook (intro)</h2>
+            <a href="hook.txt" target="_blank">
+              open hook text file
+            </a>
+            <audio controls>
+              <source src="hook.mp3" type="audio/mpeg" />
+              Your browser does not support the audio element.
+            </audio>
+            <h3>Update Hook Script</h3>
+            <textarea id="hook-text" />
+            <button
+              className="button-1"
+              onClick={() => {
+                const text = document.querySelector("#hook-text").value;
+                const message = JSON.stringify({
+                  content: text, // Example Python code
+                  filename: "hook", // Example filename
+                });
+                ws.send(message);
+              }}
+            >
+              Generate
+            </button>
+          </div>
+          <div className="row">
+            <h2>Main Script</h2>
+            <a href="hook.txt" target="_blank">
+              open main text file
+            </a>
+            <audio controls>
+              <source src="content.mp3" type="audio/mpeg" />
+              Your browser does not support the audio element.
+            </audio>
+            <h3>Update Main Script</h3>
+            <textarea id="content-text" />
+            <button
+              className="button-1"
+              onClick={() => {
+                const text = document.querySelector("#content-text").value;
+                const message = JSON.stringify({
+                  content: text, // Example Python code
+                  filename: "content", // Example filename
+                });
+                ws.send(message);
+              }}
+            >
+              Generate
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* <video ref={videoPlayerRef}></video> */}
     </>
   );
 }
