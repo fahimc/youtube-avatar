@@ -5,8 +5,11 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader";
+import { TextGeometry } from "three/examples/jsm/geometries/TextGeometry";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile, toBlobURL } from "@ffmpeg/util";
+
+let isGenerating = false;
 
 // Connect to WebSocket server
 const ws = new WebSocket("ws://localhost:8080");
@@ -15,13 +18,29 @@ const ws = new WebSocket("ws://localhost:8080");
 ws.addEventListener("open", function (event) {
   console.log("Connected to WS Server");
   ws.send("ping");
+  setInterval(() => {
+    ws.send("ping");
+  }, 1000);
 });
 
 // Listen for messages
 ws.addEventListener("message", function (event) {
   console.log("Message from server:", event.data);
-  const json = JSON.parse(event.data);
-  console.log(json);
+  try {
+    const json = JSON.parse(event.data);
+    console.log(json);
+    if (json.isGenerating !== undefined) {
+      isGenerating = json.isGenerating;
+      if (document.querySelector("#generating-overlay")) {
+        const elem = document.querySelector("#generating-overlay");
+        if (isGenerating) {
+          elem.classList.add("generating");
+        } else {
+          elem.classList.remove("generating");
+        }
+      }
+    }
+  } catch (e) {}
 });
 
 // Handle any errors that occur
@@ -277,10 +296,22 @@ function App() {
           camera.position.set(0, size.y / 2, distance);
           camera.lookAt(new THREE.Vector3(0, size.y / 2, 2));
           createBackgroundOverlay(size, distance);
-          // videoElement = videoPlayerRef.current;
-          // createVideoOverlay("video/out.mp4", size, distance);
 
-          // videoElement.mute = true;
+          // const geometry = new TextGeometry("hello world", {
+          //   size: 1,
+          //   height: 0.25,
+          //   curveSegments: 8,
+          //   bevelEnabled: true,
+          //   bevelThickness: 0.125,
+          //   bevelSize: 0.025,
+          //   bevelOffset: 0,
+          //   bevelSegments: 4,
+          // });
+          // const material = new THREE.MeshNormalMaterial();
+          // const plane = new THREE.Mesh(geometry, material);
+          // plane.position.set(0, size.y / 2, distance - 3);
+          // scene.add(plane);
+
           //
         },
         undefined,
@@ -392,29 +423,6 @@ function App() {
         const plane = new THREE.Mesh(geometry, material);
         plane.position.set(0, size.y / 2, distance - 3);
         scene.add(plane);
-      }
-      function createVideoOverlay(source, size, distance) {
-        var geometry = new THREE.PlaneGeometry(0.5, (height / width) * 0.5);
-
-        videoElement.setAttribute("playsinline", true);
-
-        videoElement.setAttribute("crossOrigin", "anonymous");
-        videoElement.src = source || `video/out.mp4`;
-        videoElement.width = width;
-        videoElement.height = height;
-        videoElement.load();
-        videoTexture = new THREE.VideoTexture(videoElement);
-        videoTexture.colorSpace = THREE.SRGBColorSpace;
-        videoTexture.crossOrigin = "anonymous";
-        const material = new THREE.MeshBasicMaterial({
-          color: 0xffffff,
-          side: THREE.DoubleSide,
-          map: videoTexture,
-        });
-        videoPlane = new THREE.Mesh(geometry, material);
-        videoPlane.position.set(0, size.y / 2, distance - 1);
-        videoPlane.visible = false;
-        scene.add(videoPlane);
       }
 
       function animateShoulders() {
@@ -863,7 +871,10 @@ function App() {
           </div>
         </div>
       </div>
-
+      <div
+        id="generating-overlay"
+        className={isGenerating ? "generating" : ""}
+      ></div>
       {/* <video ref={videoPlayerRef}></video> */}
     </>
   );

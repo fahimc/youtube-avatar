@@ -39,13 +39,29 @@ wss.on("connection", function connection(ws) {
         (error, stdout, stderr) => {
           if (error) {
             console.error(`exec error: ${error}`);
+            ws.send(JSON.stringify({ isGenerating: false }));
             return;
           }
           console.log(`stdout: ${stdout}`);
           console.error(`stderr: ${stderr}`);
-          isGenerating = false;
-          // Send completion message
-          ws.send(JSON.stringify({ status: "gen-complete" }));
+          exec(
+            `python utils/transcript.py ${path.resolve(
+              "public/",
+              `${filename}.mp3`
+            )} ${path.resolve("public/", `${filename}-transcript.json`)}`,
+            (error, stdout, stderr) => {
+              if (error) {
+                console.error(`exec error: ${error}`);
+                ws.send(JSON.stringify({ isGenerating: false }));
+                return;
+              }
+              console.log(`stdout: ${stdout}`);
+              console.error(`stderr: ${stderr}`);
+              isGenerating = false;
+              // Send completion message
+              ws.send(JSON.stringify({ isGenerating: false }));
+            }
+          );
         }
       );
     }
